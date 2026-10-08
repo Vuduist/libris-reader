@@ -18,6 +18,7 @@ class TtsVoice {
 class TtsService {
   FlutterTts? _tts;
   bool _initialized = false;
+  double _rate = 0.8;
   final _errorController = StreamController<String>.broadcast();
 
   /// Ошибки синтеза (setErrorHandler) — speak() завершается ими тоже.
@@ -54,6 +55,7 @@ class TtsService {
   }
 
   Future<void> setRate(double rate) async {
+    _rate = rate;
     await _ensureInit();
     try {
       await _tts!.setSpeechRate(rate);
@@ -115,6 +117,10 @@ class TtsService {
   /// на случай, если движок завис и не прислал ни completion, ни error.
   Future<void> speak(String text) async {
     await _ensureInit();
+    // Движки Android читают speechRate в момент speak() — задаём каждый раз.
+    try {
+      await _tts!.setSpeechRate(_rate);
+    } catch (_) {}
     final timeout = Duration(
         seconds: 20 + (text.length / 10).ceil().clamp(0, 120));
     await Future.any([

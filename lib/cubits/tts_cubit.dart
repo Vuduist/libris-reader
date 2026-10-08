@@ -278,6 +278,11 @@ class TtsCubit extends Cubit<TtsState> {
     final s = _settings.state.ttsSpeed;
     await _tts.setRate(s);
     emit(state.copyWith(speed: s));
+    // во время воспроизведения — перечитать текущий абзац с новой скоростью
+    if (state.status == TtsStatus.playing) {
+      await _tts.stop();
+      _playFrom(state.itemIndex);
+    }
   }
 
   Future<void> setVoice(TtsVoice? voice) async {

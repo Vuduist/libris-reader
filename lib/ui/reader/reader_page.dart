@@ -6,6 +6,7 @@ import '../../cubits/reader_cubit.dart';
 import '../../cubits/settings_cubit.dart';
 import '../../cubits/tts_cubit.dart';
 import '../../models/library_models.dart';
+import '../../models/reader_models.dart';
 import '../../services/dictionary_service.dart';
 import '../../services/library_storage.dart';
 import '../../services/translate_service.dart';
@@ -417,12 +418,15 @@ class _PagedChapterState extends State<_PagedChapter> {
     super.dispose();
   }
 
-  // кэш пагинации: пересчёт только при смене главы/шрифта/размеров/скейлера
+  // кэш пагинации: пересчёт при смене главы/шрифта/размеров/скейлера
   List<ReaderPageData>? _pages;
   double _cacheW = -1;
   double _cacheH = -1;
   TextScaler? _cacheScaler;
+  List<ReaderBlock>? _cacheBlocks; // защита от устаревшего кэша
   int _lastTtsBlock = -2;
+  bool _edgeNavArmed = false; // свайп за край главы: один раз за жест
+  double _edgeAccum = 0; // накопленный overscroll текущего жеста
 
   /// Страница, на которой начинается блок (или впервые встречается).
   int _pageForBlock(List<ReaderPageData> pages, int blockIndex) {
@@ -471,6 +475,7 @@ class _PagedChapterState extends State<_PagedChapter> {
         final h = constraints.maxHeight - 44; // индикатор страницы
         final scaler = MediaQuery.textScalerOf(context);
         if (_pages == null ||
+            !identical(_cacheBlocks, chapter.blocks) ||
             _cacheW != w ||
             _cacheH != h ||
             _cacheScaler != scaler) {
@@ -481,6 +486,7 @@ class _PagedChapterState extends State<_PagedChapter> {
               fontSize: state.fontSize,
               textScaler: scaler);
           _pages = paginator.paginate();
+          _cacheBlocks = chapter.blocks;
           _cacheW = w;
           _cacheH = h;
           _cacheScaler = scaler;
@@ -504,17 +510,42 @@ class _PagedChapterState extends State<_PagedChapter> {
           });
         }
         final imageMaxH = imageBlockHeight(h) - 16;
+        final book = state.book!;
         return Column(
           children: [
             Expanded(
-              child: PageView.builder(
-                controller: _pageController,
-                itemCount: pages.length,
-                onPageChanged: (i) {
-                  _currentPage = i;
-                  cubit.setPageIndex(i);
-                  setState(() {});
+              child: Listener(
+                onPointerDown: (_) {
+                  _edgeAccum = 0;
+                  _edgeNavArmed = true; // перевооружаем на новый жест
                 },
+                onPointerMove: (e) {
+                  // свайп за край главы: накопление драга по X;
+                  // влево на последней странице — след. глава,
+                  // вправо на первой — предыдущая
+                  _edgeAccum += e.delta.dx;
+                  if (!_edgeNavArmed || _edgeAccum.abs() < 70) return;
+                  if (_edgeAccum < 0 &&
+                      _currentPage >= pages.length - 1 &&
+                      state.chapterIndex < book.chapters.length - 1) {
+                    _edgeNavArmed = false;
+                    cubit.nextChapter();
+                  } else if (_edgeAccum > 0 &&
+                      _currentPage <= 0 &&
+                      state.chapterIndex > 0) {
+                    _edgeNavArmed = false;
+                    cubit.prevChapter();
+                  }
+                },
+                child: PageView.builder(
+                  controller: _pageController,
+                  itemCount: pages.length,
+                  onPageChanged: (i) {
+                    _currentPage = i;
+                    _edgeAccum = 0; // новая страница — новый отсчёт драга
+                    cubit.setPageIndex(i);
+                    setState(() {});
+                  },
                 itemBuilder: (ctx, pageIdx) {
                   final page = pages[pageIdx];
                   return Padding(
@@ -541,6 +572,7 @@ class _PagedChapterState extends State<_PagedChapter> {
                     ),
                   );
                 },
+                ),
               ),
             ),
             SizedBox(

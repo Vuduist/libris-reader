@@ -19,7 +19,7 @@ class SettingsState extends Equatable {
     this.readingMode = ReadingMode.scroll,
     this.opdsBaseUrl = 'https://m.flibusta.is',
     this.fontSize = 18,
-    this.ttsSpeed = 1.0,
+    this.ttsSpeed = 0.8,
     this.ttsVoice,
   });
 
@@ -52,6 +52,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   static const _kFont = 'fontSize';
   static const _kTtsSpeed = 'ttsSpeed';
   static const _kTtsVoice = 'ttsVoice';
+  static const _kTtsSpeedMigrated = 'ttsSpeedDefaultV2';
   static const defaultBaseUrl = 'https://m.flibusta.is';
 
   final SharedPreferences _prefs;
@@ -64,12 +65,20 @@ class SettingsCubit extends Cubit<SettingsState> {
     final reading =
         ReadingMode.values.asNameMap()[prefs.getString(_kReading)] ??
             ReadingMode.scroll;
+    // Дефолт скорости TTS — 0.8 (Google TTS на 1.0 говорит слишком быстро).
+    // Миграция: у тех, кто ни разу не менял скорость (нет ключа) или у кого
+    // остался старый дефолт 1.0, один раз переключаем на 0.8.
+    var speed = prefs.getDouble(_kTtsSpeed) ?? 0.8;
+    if (!prefs.containsKey(_kTtsSpeedMigrated)) {
+      if (!prefs.containsKey(_kTtsSpeed) || speed == 1.0) speed = 0.8;
+      prefs.setBool(_kTtsSpeedMigrated, true);
+    }
     return SettingsState(
       themeMode: theme,
       readingMode: reading,
       opdsBaseUrl: prefs.getString(_kBase) ?? defaultBaseUrl,
       fontSize: prefs.getDouble(_kFont) ?? 18,
-      ttsSpeed: (prefs.getDouble(_kTtsSpeed) ?? 1.0).clamp(0.5, 2.5),
+      ttsSpeed: speed.clamp(0.5, 2.5),
       ttsVoice: prefs.getString(_kTtsVoice),
     );
   }
